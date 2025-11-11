@@ -25,3 +25,39 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Google credentials (VERY IMPORTANT - NEVER COMMIT!)
+credentials.json
+*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+email_tracking.json
+scheduled_contacts.json
+temp_student_data.xlsx
+student_data.xlsx
+
+# Node
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# Uploads
+public/uploads/*
+!public/uploads/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store

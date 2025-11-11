@@ -5,23 +5,46 @@ import { existsSync } from "fs"
 
 export async function POST(request: NextRequest) {
   try {
-    const { file } = await request.json()
+    const { file, mode } = await request.json()
 
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 })
     }
 
+    // File path
     const filePath = join(process.cwd(), "public", "uploads", file)
 
     if (!existsSync(filePath)) {
       return NextResponse.json({ error: "File not found" }, { status: 404 })
     }
 
-    // Create a ReadableStream that we'll use to stream agent output
+    // Python script path - DIRECTLY USE profile_agent_agentic.py
+    const scriptPath = join(process.cwd(), "scripts", "profile_agent_agentic.py")
+    
+    if (!existsSync(scriptPath)) {
+      return NextResponse.json({ 
+        error: "Python script not found", 
+        path: scriptPath 
+      }, { status: 500 })
+    }
+
+    // Determine dry-run mode
+    const dryRun = mode !== 'live' // Default to dry-run unless explicitly 'live'
+
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          const python = spawn("python", ["profile_agent_agentic.py", "--file", filePath, "--dry-run"])
+          // Run Python script directly with arguments
+          const pythonArgs = [
+            scriptPath,
+            filePath,  // Pass file as first argument
+            dryRun ? "dry-run" : "live"  // Pass mode as second argument
+          ]
+
+          const python = spawn("python3", pythonArgs, {
+            cwd: process.cwd(),
+            env: { ...process.env }
+          })
 
           let buffer = ""
 
@@ -32,19 +55,19 @@ export async function POST(request: NextRequest) {
 
             for (const line of lines) {
               if (line.trim()) {
-                // Parse agent output and stream as SSE
                 const content = line.trim()
 
-                // Detect message type based on content patterns
+                // Determine message type
                 let type = "status"
                 if (content.includes("💭") || content.includes("REASONING")) type = "reasoning"
                 if (content.includes("✅") || content.includes("DECISION")) type = "decision"
                 if (content.includes("🔧") || content.includes("Tool")) type = "tool"
+                if (content.includes("📧") || content.includes("Email")) type = "email"
                 if (content.includes("❌") || content.includes("Error")) type = "error"
 
                 const eventData = {
                   type,
-                  content: content.replace(/^[🔧✅❌💭→]/gu, "").trim(),
+                  content: content.replace(/^[🔧✅❌💭📧→]/gu, "").trim(),
                 }
 
                 controller.enqueue(`data: ${JSON.stringify(eventData)}\n\n`)
@@ -63,7 +86,16 @@ export async function POST(request: NextRequest) {
             if (buffer.trim()) {
               controller.enqueue(`data: ${JSON.stringify({ type: "status", content: buffer.trim() })}\n\n`)
             }
+            controller.enqueue(`data: ${JSON.stringify({ type: "complete", content: `Process finished with code ${code}` })}\n\n`)
             controller.enqueue("data: [DONE]\n\n")
+            controller.close()
+          })
+
+          python.on("error", (error) => {
+            controller.enqueue(`data: ${JSON.stringify({ 
+              type: "error", 
+              content: `Failed to start Python: ${error.message}` 
+            })}\n\n`)
             controller.close()
           })
         } catch (error) {

@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import AgentReasoningStream from "./agent-reasoning-stream"
-import { TrendingUp } from "lucide-react"
+import { TrendingUp, Play, Square } from "lucide-react"
 
 interface Activity {
-  type: "status" | "reasoning" | "decision" | "tool" | "error"
+  type: "status" | "reasoning" | "decision" | "tool" | "error" | "email"
   content: string
   timestamp: number
 }
@@ -15,9 +16,15 @@ interface AgentActivityViewProps {
   uploadedFile: string | null
   isRunning: boolean
   onRunningChange: (running: boolean) => void
+  useGoogleSheets?: boolean  // ✅ NEW: Support Google Sheets mode
 }
 
-export default function AgentActivityView({ uploadedFile, isRunning, onRunningChange }: AgentActivityViewProps) {
+export default function AgentActivityView({ 
+  uploadedFile, 
+  isRunning, 
+  onRunningChange,
+  useGoogleSheets = false  // ✅ NEW: Default to false
+}: AgentActivityViewProps) {
   const [activities, setActivities] = useState<Activity[]>([])
   const [currentStudent, setCurrentStudent] = useState(0)
   const [totalStudents, setTotalStudents] = useState(0)
@@ -40,7 +47,15 @@ export default function AgentActivityView({ uploadedFile, isRunning, onRunningCh
   }, [isRunning])
 
   const handleStartAgent = async () => {
-    if (!uploadedFile) return
+    // ✅ UPDATED: Check if either file is uploaded OR Google Sheets mode is active
+    if (!uploadedFile && !useGoogleSheets) {
+      setActivities([{
+        type: "error",
+        content: "Please upload a file or connect Google Sheets first",
+        timestamp: Date.now()
+      }])
+      return
+    }
 
     setActivities([])
     setCurrentStudent(0)
@@ -49,10 +64,15 @@ export default function AgentActivityView({ uploadedFile, isRunning, onRunningCh
     onRunningChange(true)
 
     try {
+      // ✅ UPDATED: Send different payload based on mode
+      const payload = useGoogleSheets 
+        ? { mode: 'google-sheets' }
+        : { file: uploadedFile }
+
       const response = await fetch("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ file: uploadedFile }),
+        body: JSON.stringify(payload),
       })
 
       if (!response.ok) throw new Error("Failed to start agent")
@@ -89,6 +109,11 @@ export default function AgentActivityView({ uploadedFile, isRunning, onRunningCh
                   },
                 ])
               }
+
+              // ✅ NEW: Handle completion message
+              if (line.includes("[DONE]")) {
+                break
+              }
             } catch (e) {
               // Ignore parse errors
             }
@@ -110,11 +135,7 @@ export default function AgentActivityView({ uploadedFile, isRunning, onRunningCh
     }
   }
 
-  useEffect(() => {
-    if (isRunning && uploadedFile) {
-      handleStartAgent()
-    }
-  }, [isRunning, uploadedFile])
+  // ✅ REMOVED: Auto-start effect (now manual only)
 
   const progress = totalStudents > 0 ? (currentStudent / totalStudents) * 100 : 0
   const rate =
@@ -125,6 +146,9 @@ export default function AgentActivityView({ uploadedFile, isRunning, onRunningCh
         ).toFixed(1)
       : "0"
 
+  // ✅ NEW: Determine if agent can start
+  const canStart = useGoogleSheets || uploadedFile
+
   return (
     <Card className="border-border/50 bg-gradient-to-br from-card to-card/80 shadow-lg overflow-hidden">
       <CardHeader className="pb-4 border-b border-border/30">
@@ -134,13 +158,44 @@ export default function AgentActivityView({ uploadedFile, isRunning, onRunningCh
               <div className="p-2 bg-gradient-to-br from-primary/20 to-primary/10 rounded-lg border border-primary/10">
                 <TrendingUp className="w-5 h-5 text-primary" />
               </div>
-              <CardTitle className="text-lg">Processing Stream</CardTitle>
+              <CardTitle className="text-lg">
+                {useGoogleSheets ? "📊 Google Sheets Processing" : "📁 File Processing"}
+              </CardTitle>
             </div>
-            <CardDescription className="text-xs">Live agent reasoning and decision-making</CardDescription>
+            <CardDescription className="text-xs">
+              Live agent reasoning and decision-making
+              {useGoogleSheets && " • Connected to Google Sheets"}
+            </CardDescription>
+          </div>
+
+          {/* ✅ NEW: Start/Stop Button */}
+          <div className="flex items-center gap-2">
+            {!isRunning ? (
+              <Button
+                onClick={handleStartAgent}
+                disabled={!canStart}
+                className="gap-2"
+                size="sm"
+              >
+                <Play className="h-4 w-4" />
+                Start Agent
+              </Button>
+            ) : (
+              <Button
+                onClick={() => onRunningChange(false)}
+                variant="destructive"
+                className="gap-2"
+                size="sm"
+              >
+                <Square className="h-4 w-4" />
+                Stop
+              </Button>
+            )}
           </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-6 pt-6">
+        {/* Stats Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="p-4 rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20 hover:border-primary/40 transition-colors">
             <div className="text-xs text-muted-foreground font-semibold mb-2 uppercase tracking-wider">Current</div>
@@ -185,7 +240,16 @@ export default function AgentActivityView({ uploadedFile, isRunning, onRunningCh
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center border border-primary/20">
                 <div className="w-5 h-5 rounded-full bg-gradient-to-r from-primary to-accent animate-pulse" />
               </div>
-              <span>{isRunning ? "Initializing agents..." : "Activity will appear here"}</span>
+              <span>
+                {isRunning 
+                  ? "Initializing agent..." 
+                  : canStart 
+                    ? "Click 'Start Agent' to begin processing"
+                    : useGoogleSheets 
+                      ? "Waiting for Google Sheets connection..."
+                      : "Upload a file to begin"
+                }
+              </span>
             </div>
           ) : (
             <AgentReasoningStream activities={activities} />

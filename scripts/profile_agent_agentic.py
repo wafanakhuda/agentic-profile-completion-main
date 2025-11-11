@@ -899,8 +899,38 @@ Begin!"""
 
 
 if __name__ == "__main__":
-    # Test the agentic agent
-    run_agentic_agent(
-        excel_file=CONFIG['excel_file'],
-        dry_run=True
-    )
+    import sys
+    import argparse
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--file', type=str, help='Excel file path')
+    parser.add_argument('--source', type=str, choices=['file', 'google-sheets'], default='file')
+    parser.add_argument('--dry-run', action='store_true', help='Dry run mode')
+    parser.add_argument('--send', action='store_true', help='Live send mode')
+    
+    args = parser.parse_args()
+    
+    # Determine dry run mode
+    dry_run = not args.send if args.send else True
+    
+    # Determine data source
+    if args.source == 'google-sheets':
+        print("\n📊 Using Google Sheets as data source")
+        from google_sheets_reader import GoogleSheetsReader
+        
+        try:
+            reader = GoogleSheetsReader()
+            excel_file = reader.export_to_excel('temp_student_data.xlsx')
+            print(f"✅ Downloaded data from Google Sheets: {excel_file}")
+        except Exception as e:
+            print(f"❌ Failed to read from Google Sheets: {e}")
+            sys.exit(1)
+    else:
+        excel_file = args.file or CONFIG['excel_file']
+    
+    print(f"\n🚀 Starting agent with:")
+    print(f"   File: {excel_file}")
+    print(f"   Mode: {'DRY RUN' if dry_run else 'LIVE'}")
+    print(f"   Source: {args.source}")
+    
+    run_agentic_agent(excel_file=excel_file, dry_run=dry_run)
