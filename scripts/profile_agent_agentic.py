@@ -1,7 +1,15 @@
+# -*- coding: utf-8 -*-
+import sys
+import io
+
+# Force UTF-8 encoding for Windows
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 """
 TRULY AGENTIC Profile Completion Agent
 ---------------------------------------
-
 This is a genuinely agentic system where the AI agent:
 - Makes strategic decisions about each student
 - Chooses which tools to use and when
@@ -24,6 +32,7 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode
 from anthropic import Anthropic
 from dotenv import load_dotenv
+
 
 load_dotenv()
 

@@ -7,7 +7,12 @@ export async function GET() {
     const scriptPath = join(process.cwd(), "scripts", "fetch_from_sheets.py")
 
     return new Promise((resolve) => {
-      const python = spawn("python3", [scriptPath])
+      const python = spawn("python", [scriptPath], {
+        env: { 
+          ...process.env,
+          PYTHONIOENCODING: 'utf-8'
+        }
+      })
       
       let dataBuffer = ""
       let errorBuffer = ""
@@ -22,9 +27,10 @@ export async function GET() {
 
       python.on("close", (code) => {
         if (code !== 0) {
+          console.error("Python error:", errorBuffer)
           resolve(
             NextResponse.json(
-              { error: errorBuffer || "Failed to fetch data" },
+              { error: errorBuffer || "Failed to fetch data", success: false },
               { status: 500 }
             )
           )
@@ -35,9 +41,10 @@ export async function GET() {
           const result = JSON.parse(dataBuffer)
           resolve(NextResponse.json(result))
         } catch (error) {
+          console.error("Parse error:", error)
           resolve(
             NextResponse.json(
-              { error: "Failed to parse data" },
+              { error: "Failed to parse data", success: false },
               { status: 500 }
             )
           )
@@ -45,8 +52,9 @@ export async function GET() {
       })
     })
   } catch (error) {
+    console.error("Fetch error:", error)
     return NextResponse.json(
-      { error: "Failed to fetch students" },
+      { error: "Failed to fetch students", success: false },
       { status: 500 }
     )
   }

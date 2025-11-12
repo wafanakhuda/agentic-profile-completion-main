@@ -7,20 +7,28 @@ export async function POST(request: NextRequest) {
   try {
     const { file, mode } = await request.json()
 
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 })
+    let scriptPath: string
+    let pythonArgs: string[]
+
+    if (mode === 'google-sheets') {
+      // Use Google Sheets mode
+      scriptPath = join(process.cwd(), "scripts", "profile_agent_agentic.py")
+      pythonArgs = [scriptPath, "--source", "google-sheets", "--dry-run"]
+    } else {
+      // Use uploaded file mode
+      if (!file) {
+        return NextResponse.json({ error: "No file provided" }, { status: 400 })
+      }
+
+      const filePath = join(process.cwd(), "public", "uploads", file)
+      if (!existsSync(filePath)) {
+        return NextResponse.json({ error: "File not found" }, { status: 404 })
+      }
+
+      scriptPath = join(process.cwd(), "scripts", "profile_agent_agentic.py")
+      pythonArgs = [scriptPath, "--file", filePath, "--dry-run"]
     }
 
-    // File path
-    const filePath = join(process.cwd(), "public", "uploads", file)
-
-    if (!existsSync(filePath)) {
-      return NextResponse.json({ error: "File not found" }, { status: 404 })
-    }
-
-    // Python script path - DIRECTLY USE profile_agent_agentic.py
-    const scriptPath = join(process.cwd(), "scripts", "profile_agent_agentic.py")
-    
     if (!existsSync(scriptPath)) {
       return NextResponse.json({ 
         error: "Python script not found", 
@@ -28,23 +36,17 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
     }
 
-    // Determine dry-run mode
-    const dryRun = mode !== 'live' // Default to dry-run unless explicitly 'live'
-
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          // Run Python script directly with arguments
-          const pythonArgs = [
-            scriptPath,
-            filePath,  // Pass file as first argument
-            dryRun ? "dry-run" : "live"  // Pass mode as second argument
-          ]
-
-          const python = spawn("python3", pythonArgs, {
-            cwd: process.cwd(),
-            env: { ...process.env }
-          })
+          const python = spawn("python", pythonArgs, {
+  cwd: process.cwd(),
+  env: { 
+    ...process.env,
+    PYTHONIOENCODING: 'utf-8'  // ✅ FIX: Force UTF-8 encoding
+  },
+  shell: true
+})
 
           let buffer = ""
 
@@ -57,7 +59,6 @@ export async function POST(request: NextRequest) {
               if (line.trim()) {
                 const content = line.trim()
 
-                // Determine message type
                 let type = "status"
                 if (content.includes("💭") || content.includes("REASONING")) type = "reasoning"
                 if (content.includes("✅") || content.includes("DECISION")) type = "decision"
@@ -86,7 +87,6 @@ export async function POST(request: NextRequest) {
             if (buffer.trim()) {
               controller.enqueue(`data: ${JSON.stringify({ type: "status", content: buffer.trim() })}\n\n`)
             }
-            controller.enqueue(`data: ${JSON.stringify({ type: "complete", content: `Process finished with code ${code}` })}\n\n`)
             controller.enqueue("data: [DONE]\n\n")
             controller.close()
           })
